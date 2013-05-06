@@ -1,0 +1,6 @@
+jeeq is an encrypting tool using ECDSA.
+ECDSA is not designed for encryption, but by tricking it one can make it encrypt anything.
+
+Usage:
+Install python 2.x and run ./jeeq.py
+No dependencies
