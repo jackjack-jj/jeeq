@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 # *-* coding: utf-8 *-*
 
-# jeeq 0.0.1
+# jeeq 0.0.2
 # https://github.com/jackjack-jj/jeeq
 # Licensed under GPLv3
 
-import random
-import base64
-import hashlib
+import random,base64,hashlib,sys
 
 _p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2FL
 _r = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141L
@@ -17,6 +15,7 @@ _Gx = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798L
 _Gy = 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8L
 
 curvedicBtc={'p':_p, 'r':_r, 'a':_a, 'b':_b, 'Gx':_Gx, 'Gy':_Gy}
+jeeqversion='0.0.2'
 
 def str_to_long(b):
 	res = 0
@@ -136,9 +135,9 @@ def hash_160(public_key):
 	md.update(hashlib.sha256(public_key).digest())
 	return md.digest()
 
-def public_key_to_bc_address(public_key):
+def public_key_to_bc_address(public_key, addrtype=0):
 	h160 = hash_160(public_key)
-	return hash_160_to_bc_address(h160)
+	return hash_160_to_bc_address(h160, addrtype)
 
 def hash_160_to_bc_address(h160,addrtype=0):
 	vh160 = chr(addrtype) + h160
@@ -288,6 +287,7 @@ def pointSerToPoint(Aser, curved=curvedicBtc):
 
 def decrypt_message(pvk, enc, curved=curvedicBtc, verbose=False):
 	P = Point( curved, curved['Gx'], curved['Gy'], curved['r'] )
+	pvk=str_to_long(pvk)
 	pubkeys = [(P*pvk).ser(True), (P*pvk).ser(False)]
 	enc = base64.b64decode(enc)
 
@@ -339,44 +339,96 @@ def decrypt_message(pvk, enc, curved=curvedicBtc, verbose=False):
 
 	return [msg, checksumok]
 
+import platform
+def KeyboardInterruptText():
+	if platform.system() == "Windows":
+		return "Hit Ctrl-C or Ctrl-Z"
+	return "Hit Ctrl-D"
 
+def GetArg(a, d=''):
+	for i in range(1,len(sys.argv)):
+		if sys.argv[i-1]==a:
+			if a in ['-i']:
+				f=open(sys.argv[i],'r')
+				content=f.read()
+				f.close()
+				return content
+			return sys.argv[i]
+	if a == '-i':
+		print "Type the text to use. "+KeyboardInterruptText()+" to stop writing: "
+		return ''.join(sys.stdin.readlines())
+	if a == '-k':
+		return raw_input("\nType the key to use: ")
+	return d
+
+def GetFlag(a, d=''):
+	for i in range(1,len(sys.argv)):
+		if sys.argv[i]==a:
+			return True
+	return False
+
+def print_help(e=False):
+	print 'jeeq.py '+jeeqversion
+	print 'Encryption/decryption tool using Bitcoin keys'
+	print 'usage:'
+	print '   ENCRYPTION: '+sys.argv[0]+' -e -i input_file -o output_file -k public_key [-v network number]'
+	print '   DECRYPTION: '+sys.argv[0]+' -d -i input_file -o output_file -k private_key [-v network number]'
+	print ''
+	print 'Missing arguments will be prompted.'
+	print 'Public keys are NOT Bitcoin addresses, you NEED public keys.'
+	if e:
+		exit(0)
 
 if __name__ == '__main__':
 	curved=curvedicBtc
 
-	pubkey='0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b\
-16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8'.decode('hex')
+	# 
+	# Usage:
+	# 
+	# encrypted = encrypt_message(pubkey, "hello world!")
+	# 
+	# output    = decrypt_message(pvk, base64d_msg, verbose=True)
+	# 
 
-	print '************************'
-	print '**     ENCRYPTION     **'
-	print '************************'
-	encrypted=encrypt_message(pubkey,"First encrypted message")
-	print '-----BEGIN ECDSA ENCRYPTED MESSAGE-----\n\
-To: '+public_key_to_bc_address(pubkey)+'\n\
-\n\
-'+encrypted+'\n\
------END ECDSA ENCRYPTED MESSAGE-----'
-	print 
+	if GetFlag('--help') or GetFlag('-h'):
+		print_help(True)
+		
+	if GetFlag('-e'):
+		addv=int(GetArg('-v',0))
+		message=GetArg('-i')
+		public_key=GetArg('-k')
 
-	print '************************'
-	print '**     DECRYPTION     **'
-	print '************************'
-	#hex private key = 0000000000000000000000000000000000000000000000000000000000000001
-	#WIF private key = 5HpHagT65TZzG1PH3CSu63k8DbpvD8s5ip4nEB3kEsreAnchuDf
-	pvk = str_to_long('0000000000000000000000000000000000000000000000000000000000000001'.decode('hex'))
-	print '0000...001 == 5HpHag...: ', str_to_long(DecodeBase58Check('5HpHagT65TZzG1PH3CSu63k8DbpvD8s5ip4nEB3kEsreAnchuDf')[1:])==pvk
+		if len(public_key) in [66,130]:
+			public_key=public_key.decode('hex')
+		assert len(public_key) in [33,65], 'Bad public key'
 
-	msg_to_decrypt = 'amoAAAJQkgO/tTUpns0TyhcdqVRlsEuehC6pZL6j3A61qo9wMtlXEQM+bBCv2AufwV/XaQkobQ1+D8uMq3ckEpEZNCO7mzojCQM8WGHLg4wFX2bB+soJKfaNFRNyzQmL2SAl+qv1MthcFAN7jNzjwPVyKk/vF+DCECPq+/h6W+DHGmt7N1xHQULQtw=='
-	msg_to_decrypt2 = 'amoAAAJQkgE3eaZrKAuxZihe9pNmMYb/9rpNLoJFx00RlQ7XF7nGnQNqCA6DId+XXK+Z9Jqu73Upv6dHB99Ak6/TODmCCqkszgC3/g7MhfQYcRqQ7BOOhPEa0s/915eKHbpQ8J0jb9mKFgO6OF7hZ0ppIewJFRY9Ais5r8wGGVgtW8HxUab+GAdHhQ=='
-	print 
-	output=decrypt_message(pvk, msg_to_decrypt, verbose=True)
-	print 
-	print output
-	print
-	print
-	print decrypt_message(pvk, msg_to_decrypt2)
-	print 
+		output=encrypt_message(public_key,message)
 
+		output_file=GetArg('-o')
+		if output_file:
+			f=open(output_file,'w')
+			f.write(output)
+			f.close()
+		print "\n\nEncrypted message to "+public_key_to_bc_address(public_key,addv)+":\n"+output
+
+
+	if GetFlag('-d'):
+		addv=int(GetArg('-v',0))
+		message=GetArg('-i')
+		private_key=GetArg('-k')
+
+		if len(private_key)==64:
+			private_key=private_key.decode('hex')
+		assert len(private_key)==32, 'Bad private key'
+
+		output=decrypt_message(private_key, message, verbose=True)
+
+		output_file=GetArg('-o')
+		if output_file:
+			f=open(output_file,'w')
+			f.write(output[0])
+			f.close()
+		print "\nDecrypted message to "+public_key_to_bc_address(private_key,addv)+":\n"+output[0]
 
 
 
