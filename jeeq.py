@@ -412,7 +412,7 @@ if __name__ == '__main__':
 		print "\n\nEncrypted message to "+public_key_to_bc_address(public_key,addv)+":\n"+output
 
 
-	if GetFlag('-d'):
+	elif GetFlag('-d'):
 		addv=int(GetArg('-v',0))
 		message=GetArg('-i')
 		private_key=GetArg('-k')
@@ -430,7 +430,8 @@ if __name__ == '__main__':
 			f.close()
 		print "\nDecrypted message to "+public_key_to_bc_address(private_key,addv)+":\n"+output[0]
 
-
+	else:
+		print_help(True)
 
 
 
