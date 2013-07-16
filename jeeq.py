@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # *-* coding: utf-8 *-*
 
-# jeeq 0.0.2
+# jeeq 0.0.3
 # https://github.com/jackjack-jj/jeeq
 # Licensed under GPLv3
 
@@ -15,7 +15,7 @@ _Gx = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798L
 _Gy = 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8L
 
 curvedicBtc={'p':_p, 'r':_r, 'a':_a, 'b':_b, 'Gx':_Gx, 'Gy':_Gy}
-jeeqversion='0.0.2'
+jeeqversion='0.0.3'
 
 def str_to_long(b):
 	res = 0
@@ -371,13 +371,25 @@ def print_help(e=False):
 	print 'jeeq.py '+jeeqversion
 	print 'Encryption/decryption tool using Bitcoin keys'
 	print 'usage:'
-	print '   ENCRYPTION: '+sys.argv[0]+' -e -i input_file -o output_file -k public_key [-v network number]'
-	print '   DECRYPTION: '+sys.argv[0]+' -d -i input_file -o output_file -k private_key [-v network number]'
+	print '   KEY GENERATION: '+sys.argv[0]+' -g [-v network number]'
+	print '   ENCRYPTION:     '+sys.argv[0]+' -e -i input_file -o output_file -k public_key  [-v network number]'
+	print '   DECRYPTION:     '+sys.argv[0]+' -d -i input_file -o output_file -k private_key [-v network number]'
 	print ''
 	print 'Missing arguments will be prompted.'
 	print 'Public keys are NOT Bitcoin addresses, you NEED public keys.'
 	if e:
 		exit(0)
+
+def generate_keys(curved=curvedicBtc, bitcoin=True, addv=0):
+	rand = ( '%013x' % long(random.random() * 0xfffffffffffff) )*5
+	pvk  = (long(rand,16) >> 4)%curved['r']
+	G = Point( curved, curved['Gx'], curved['Gy'], curved['r'] )
+	P = pvk*G
+	btcaddresses=['','']
+	if bitcoin:
+		btcaddresses[0]=public_key_to_bc_address(P.ser(True), addv)
+		btcaddresses[1]=public_key_to_bc_address(P.ser(False),addv)
+	return ['%064x'%pvk, P.ser(True).encode('hex'), P.ser(False).encode('hex'), btcaddresses]
 
 if __name__ == '__main__':
 	curved=curvedicBtc
@@ -392,7 +404,17 @@ if __name__ == '__main__':
 
 	if GetFlag('--help') or GetFlag('-h'):
 		print_help(True)
-		
+
+	if GetFlag('--generate-keys') or GetFlag('-g'):
+		v=int(GetArg('-v',0))
+		keys=generate_keys(addv=v)
+		print 'Private key:              ', keys[0]
+		print 'Compressed public key:    ', keys[1]
+		print 'Uncompressed public key:  ', keys[2]
+		print 'Compressed address:       ', keys[3][0]
+		print 'Uncompressed address:     ', keys[3][1]
+		exit(0)
+
 	if GetFlag('-e'):
 		addv=int(GetArg('-v',0))
 		message=GetArg('-i')
