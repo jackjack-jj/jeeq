@@ -7,15 +7,14 @@
 
 import random,base64,hashlib,sys
 
-_p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2FL
-_r = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141L
-_b = 0x0000000000000000000000000000000000000000000000000000000000000007L
-_a = 0x0000000000000000000000000000000000000000000000000000000000000000L
+_p  = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2FL
+_r  = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141L
+_b  = 0x0000000000000000000000000000000000000000000000000000000000000007L
+_a  = 0x0000000000000000000000000000000000000000000000000000000000000000L
 _Gx = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798L
 _Gy = 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8L
 
-curvedicBtc={'p':_p, 'r':_r, 'a':_a, 'b':_b, 'Gx':_Gx, 'Gy':_Gy}
-jeeqversion='0.0.3'
+jeeqversion='0.0.4'
 
 def str_to_long(b):
 	res = 0
@@ -25,9 +24,23 @@ def str_to_long(b):
 		pos *= 256
 	return res
 
-def contains_point(x,y, curved=curvedicBtc):
-	_p = curved['p']
-	return y * y % _p == ( ( ( x + curved['a'] %_p ) * x * x % _p ) + curved['b'] ) % _p
+class CurveFp( object ):
+	def __init__( self, p, a, b ):
+		self.__p = p
+		self.__a = a
+		self.__b = b
+
+	def p( self ):
+		return self.__p
+
+	def a( self ):
+		return self.__a
+
+	def b( self ):
+		return self.__b
+
+	def contains_point( self, x, y ):
+		return ( y * y - ( x * x * x + self.__a * x + self.__b ) ) % self.__p == 0
 
 class Point( object ):
 	def __init__( self, curve, x, y, order = None ):
@@ -35,7 +48,7 @@ class Point( object ):
 		self.__x = x
 		self.__y = y
 		self.__order = order
-		if self.__curve: assert contains_point( x, y, self.__curve )
+		if self.__curve: assert self.__curve.contains_point( x, y )
 		if order: assert self * order == INFINITY
 
 	def __add__( self, other ):
@@ -48,7 +61,7 @@ class Point( object ):
 			else:
 				return self.double()
 
-		p = self.__curve['p']
+		p = self.__curve.p()
 		l = ( ( other.__y - self.__y ) * \
 					inverse_mod( other.__x - self.__x, p ) ) % p
 		x3 = ( l * l - self.__x - other.__x ) % p
@@ -92,8 +105,8 @@ class Point( object ):
 		if self == INFINITY:
 			return INFINITY
 
-		p = self.__curve['p']
-		a = self.__curve['a']
+		p = self.__curve.p()
+		a = self.__curve.a()
 		l = ( ( 3 * self.__x * self.__x + a ) * \
 					inverse_mod( 2 * self.__y, p ) ) % p
 		x3 = ( l * l - 2 * self.__x ) % p
@@ -118,6 +131,8 @@ class Point( object ):
 		return ( '04'+('%064x'%self.__x)+('%064x'%self.__y) ).decode('hex')
 		
 INFINITY = Point( None, None, None )
+curveBitcoin = CurveFp(_p, _a, _b)
+generatorBitcoin = Point(curveBitcoin, _Gx, _Gy, _r)
 
 def inverse_mod( a, m ):
 	if a < 0 or m <= a: a = a % m
@@ -221,17 +236,19 @@ def sha256(a):
 def chunks(l, n):
     return [l[i:i+n] for i in xrange(0, len(l), n)]
 
-def ECC_YfromX(x,curved=curvedicBtc, odd=True):
-	_p = curved['p']
+def ECC_YfromX(x,curved=curveBitcoin, odd=True):
+	_p = curved.p()
+	_a = curved.a()
+	_b = curved.b()
 	for offset in range(128):
 		Mx=x+offset
-		My2 = pow(Mx, 3, _p) + curved['a'] * pow(Mx, 2, _p) + curved['b'] % _p
+		My2 = pow(Mx, 3, _p) + _a * pow(Mx, 2, _p) + _b % _p
 		My = pow(My2, (_p+1)/4, _p )
 
-		if contains_point(Mx,My,curved):
+		if curved.contains_point(Mx,My):
 			if odd == bool(My&1):
 				return [My,offset]
-			return [curved['p']-My,offset]
+			return [_p-My,offset]
 	raise Exception('ECC_YfromX: No Y found')
 
 def private_header(msg,v):
@@ -249,17 +266,19 @@ def public_header(pubkey,v):
 		r=sha256(pubkey)[:2]
 	return '\x6a\x6a' + ('%02x'%v).decode('hex') + ('%04x'%len(r)).decode('hex') + r
 
-def encrypt_message(pubkey,m,curved=curvedicBtc):
+def encrypt_message(pubkey,m,curved=curveBitcoin,generator=generatorBitcoin):
 	r=''
 	msg = private_header(m,0)+m
 	msg = msg+('\x00'*( 32-(len(msg)%32) ))
 	msgs = chunks(msg,32)
 
-	P = Point( curved, curved['Gx'], curved['Gy'], curved['r'] )
+	_r  = generator.order()
+
+	P = generator
 	if len(pubkey)==33: #compressed
-		pk = Point( curved, str_to_long(pubkey[1:33]), ECC_YfromX(str_to_long(pubkey[1:33]), curved, pubkey[0]=='\x03')[0], curved['r'] )
+		pk = Point( curved, str_to_long(pubkey[1:33]), ECC_YfromX(str_to_long(pubkey[1:33]), curved, pubkey[0]=='\x03')[0], _r )
 	else:
-		pk = Point( curved, str_to_long(pubkey[1:33]), str_to_long(pubkey[33:65]), curved['r'] )
+		pk = Point( curved, str_to_long(pubkey[1:33]), str_to_long(pubkey[33:65]), _r )
 
 	for i in range(len(msgs)):
 		rand=( ( '%013x' % long(random.random() * 0xfffffffffffff) )*5 )
@@ -267,7 +286,7 @@ def encrypt_message(pubkey,m,curved=curvedicBtc):
 		n = long(rand,16) >> 4
 		Mx = str_to_long(msgs[i])
 		My,xoffset=ECC_YfromX(Mx, curved)
-		M = Point( curved, Mx+xoffset, My, curved['r'] )
+		M = Point( curved, Mx+xoffset, My, _r )
 
 		T = P*n
 		U = pk*n + M
@@ -278,15 +297,16 @@ def encrypt_message(pubkey,m,curved=curvedicBtc):
 
 	return base64.b64encode(public_header(pubkey,0) + r)
 
-def pointSerToPoint(Aser, curved=curvedicBtc):
+def pointSerToPoint(Aser, curved=curveBitcoin, generator=generatorBitcoin):
+	_r  = generator.order()
 	assert Aser[0] in ['\x02','\x03','\x04']
 	if Aser[0] == '\x04':
-		return Point( curved, str_to_long(Aser[1:33]), str_to_long(Aser[33:]), curved['r'] )
+		return Point( curved, str_to_long(Aser[1:33]), str_to_long(Aser[33:]), _r )
 	Mx = str_to_long(Aser[1:])
-	return Point( curved, Mx, ECC_YfromX(Mx, curved, Aser[0]=='\x03')[0], curved['r'] )
+	return Point( curved, Mx, ECC_YfromX(Mx, curved, Aser[0]=='\x03')[0], _r )
 
-def decrypt_message(pvk, enc, curved=curvedicBtc, verbose=False):
-	P = Point( curved, curved['Gx'], curved['Gy'], curved['r'] )
+def decrypt_message(pvk, enc, curved=curveBitcoin, verbose=False, generator=generatorBitcoin):
+	P = generator
 	pvk=str_to_long(pvk)
 	pubkeys = [(P*pvk).ser(True), (P*pvk).ser(False)]
 	enc = base64.b64decode(enc)
@@ -301,7 +321,10 @@ def decrypt_message(pvk, enc, curved=curvedicBtc, verbose=False):
 	if verbose: print '  Version: %d'%phv
 	checksum_pubkey=public_header[:2]
 	if verbose: print '  Checksum of pubkey: %s'%checksum_pubkey.encode('hex')
-	assert checksum_pubkey in map(lambda x:sha256(x)[:2], pubkeys), 'Bad private key'
+
+	address=filter(lambda x:sha256(x)[:2]==checksum_pubkey, pubkeys)
+	assert len(address)>0, 'Bad private key'
+	address=address[0]
 	enc=enc[5+hs:]
 
 
@@ -310,8 +333,8 @@ def decrypt_message(pvk, enc, curved=curvedicBtc, verbose=False):
 		ots = ord(Tser[0])
 		xoffset = ots>>1
 		Tser = chr(2+(ots&1))+Tser[1:]
-		T = pointSerToPoint(Tser,curved)
-		U = pointSerToPoint(User,curved)
+		T = pointSerToPoint(Tser,curved,generator)
+		U = pointSerToPoint(User,curved,generator)
 
 		V = T*pvk
 		Mcalc = U+(V.negative_self())
@@ -337,7 +360,7 @@ def decrypt_message(pvk, enc, curved=curvedicBtc, verbose=False):
 	if verbose: print '  Corresponds: '+str(checksumok)
 	
 
-	return [msg, checksumok]
+	return [msg, checksumok, address]
 
 import platform
 def KeyboardInterruptText():
@@ -380,10 +403,10 @@ def print_help(e=False):
 	if e:
 		exit(0)
 
-def generate_keys(curved=curvedicBtc, bitcoin=True, addv=0):
+def generate_keys(curved=curveBitcoin, bitcoin=True, addv=0, G=generatorBitcoin):  #will return private key < 2^256
+	_r  = generator.order()
 	rand = ( '%013x' % long(random.random() * 0xfffffffffffff) )*5
-	pvk  = (long(rand,16) >> 4)%curved['r']
-	G = Point( curved, curved['Gx'], curved['Gy'], curved['r'] )
+	pvk  = (long(rand,16) >> 4)%_r
 	P = pvk*G
 	btcaddresses=['','']
 	if bitcoin:
@@ -392,14 +415,13 @@ def generate_keys(curved=curvedicBtc, bitcoin=True, addv=0):
 	return ['%064x'%pvk, P.ser(True).encode('hex'), P.ser(False).encode('hex'), btcaddresses]
 
 if __name__ == '__main__':
-	curved=curvedicBtc
 
 	# 
 	# Usage:
 	# 
-	# encrypted = encrypt_message(pubkey, "hello world!")
+	# encrypted = encrypt_message(pubkey, "hello world!", generatorBitcoin)
 	# 
-	# output    = decrypt_message(pvk, base64d_msg, verbose=True)
+	# output    = decrypt_message(pvk, base64d_msg, verbose=True, generatorBitcoin)
 	# 
 
 	if GetFlag('--help') or GetFlag('-h'):
@@ -424,7 +446,7 @@ if __name__ == '__main__':
 			public_key=public_key.decode('hex')
 		assert len(public_key) in [33,65], 'Bad public key'
 
-		output=encrypt_message(public_key,message)
+		output=encrypt_message(public_key,message,generatorBitcoin)
 
 		output_file=GetArg('-o')
 		if output_file:
@@ -443,14 +465,14 @@ if __name__ == '__main__':
 			private_key=private_key.decode('hex')
 		assert len(private_key)==32, 'Bad private key'
 
-		output=decrypt_message(private_key, message, verbose=True)
+		output=decrypt_message(private_key, message, verbose=True, generator=generatorBitcoin)
 
 		output_file=GetArg('-o')
 		if output_file:
 			f=open(output_file,'w')
 			f.write(output[0])
 			f.close()
-		print "\nDecrypted message to "+public_key_to_bc_address(private_key,addv)+":\n"+output[0]
+		print "\nDecrypted message to "+public_key_to_bc_address(output[2],addv)+":\n"+output[0]
 
 	else:
 		print_help(True)
