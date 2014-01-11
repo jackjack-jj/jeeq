@@ -446,7 +446,7 @@ if __name__ == '__main__':
 			public_key=public_key.decode('hex')
 		assert len(public_key) in [33,65], 'Bad public key'
 
-		output=encrypt_message(public_key,message,generatorBitcoin)
+		output=encrypt_message(public_key,message, generator=generatorBitcoin)
 
 		output_file=GetArg('-o')
 		if output_file:
