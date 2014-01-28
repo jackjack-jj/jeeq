@@ -463,7 +463,7 @@ if __name__ == '__main__':
 
 		if len(private_key)==64:
 			private_key=private_key.decode('hex')
-		assert len(private_key)==32, 'Bad private key'
+		assert len(private_key)==32, 'Bad private key, you must give it in hexadecimal'
 
 		output=decrypt_message(private_key, message, verbose=True, generator=generatorBitcoin)
 
