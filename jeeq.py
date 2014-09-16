@@ -404,7 +404,7 @@ def print_help(e=False):
 		exit(0)
 
 def generate_keys(curved=curveBitcoin, bitcoin=True, addv=0, G=generatorBitcoin):  #will return private key < 2^256
-	_r  = generator.order()
+	_r  = G.order()
 	rand = ( '%013x' % long(random.random() * 0xfffffffffffff) )*5
 	pvk  = (long(rand,16) >> 4)%_r
 	P = pvk*G
